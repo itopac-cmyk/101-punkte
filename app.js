@@ -2,6 +2,10 @@
   'use strict';
 
   var KEY = '101-punkte-v1';
+  var DEFAULT_PLAYERS = [
+    ['Spieler 1', 'Spieler 2'],
+    ['Spieler 3', 'Spieler 4']
+  ];
   var SR = window.SpeechRecognition || window.webkitSpeechRecognition;
   var speechSupported = typeof SR === 'function';
   var COUNT = [null, 'einer', 'zwei', 'drei', 'vier', 'fünf', 'sechs', 'sieben', 'acht', 'neun', 'zehn', 'elf'];
@@ -30,6 +34,10 @@
   var cachedVoice;
 
   var state = load();
+  if (state.migrated) {
+    delete state.migrated;
+    save();
+  }
   announcedTen = Score.firstTenComplete(state.scores);
 
   function $(id) { return document.getElementById(id); }
@@ -40,9 +48,13 @@
     return rows;
   }
 
+  function defaultPlayers() {
+    return DEFAULT_PLAYERS.map(function (pair) { return pair.slice(); });
+  }
+
   function defaultState() {
     return {
-      names: ['Team A', 'Team B'],
+      players: defaultPlayers(),
       scores: defaultScores(),
       round: 0,
       team: 0,
@@ -54,6 +66,44 @@
     if (typeof value !== 'string') return fallback;
     var trimmed = value.trim().slice(0, 30);
     return trimmed || fallback;
+  }
+
+  function pairFromLegacy(value, team) {
+    var fallback = DEFAULT_PLAYERS[team];
+    if (typeof value !== 'string') return fallback.slice();
+    var text = value.trim();
+    if (!text || (team === 0 && text === 'Team A') || (team === 1 && text === 'Team B')) return fallback.slice();
+    var parts = text.split(/\s*&\s*/);
+    if (parts.length >= 2 && parts[0].trim() && parts[1].trim()) {
+      return [
+        cleanName(parts[0], fallback[0]),
+        cleanName(parts.slice(1).join(' & '), fallback[1])
+      ];
+    }
+    return [cleanName(text, fallback[0]), fallback[1]];
+  }
+
+  function readPlayers(data) {
+    if (data.players && Array.isArray(data.players) && data.players.length === 2) {
+      return [0, 1].map(function (team) {
+        var pair = data.players[team];
+        var fallback = DEFAULT_PLAYERS[team];
+        if (!Array.isArray(pair)) return pairFromLegacy(typeof pair === 'string' ? pair : '', team);
+        return [cleanName(pair[0], fallback[0]), cleanName(pair[1], fallback[1])];
+      });
+    }
+    if (Array.isArray(data.names)) {
+      return [0, 1].map(function (team) { return pairFromLegacy(data.names[team], team); });
+    }
+    return defaultPlayers();
+  }
+
+  function teamLabel(team) {
+    return state.players[team][0] + ' & ' + state.players[team][1];
+  }
+
+  function playerInput(team, index) {
+    return $('player-' + team + '-' + index);
   }
 
   function load() {
@@ -74,15 +124,14 @@
           else return fresh;
         }
       }
+      var hadPlayers = data.players && Array.isArray(data.players);
       return {
-        names: [
-          cleanName(data.names && data.names[0], 'Team A'),
-          cleanName(data.names && data.names[1], 'Team B')
-        ],
+        players: readPlayers(data),
         scores: scores,
         round: Number.isInteger(data.round) && data.round >= 0 && data.round <= 10 ? data.round : 0,
         team: data.team === 1 ? 1 : 0,
-        theme: data.theme === 'light' || data.theme === 'dark' ? data.theme : null
+        theme: data.theme === 'light' || data.theme === 'dark' ? data.theme : null,
+        migrated: !hadPlayers
       };
     } catch (err) {
       return fresh;
@@ -143,8 +192,7 @@
   }
 
   function whereText() {
-    var name = state.names[state.team] || (state.team === 0 ? 'Team A' : 'Team B');
-    return 'Runde ' + (state.round + 1) + ' · ' + name;
+    return 'Runde ' + (state.round + 1) + ' · ' + teamLabel(state.team);
   }
 
   function statusText() {
@@ -223,8 +271,10 @@
         void totalEl.offsetWidth;
         totalEl.classList.add('pop');
       }
-      var input = $('name-' + (i === 0 ? 'a' : 'b'));
-      if (document.activeElement !== input && input.value !== state.names[i]) input.value = state.names[i];
+      for (var p = 0; p < 2; p++) {
+        var input = playerInput(i, p);
+        if (document.activeElement !== input && input.value !== state.players[i][p]) input.value = state.players[i][p];
+      }
       var card = document.querySelector('[data-team-card="' + i + '"]');
       var playing = !win;
       card.classList.toggle('active', playing && state.team === i);
@@ -240,7 +290,7 @@
       if (win.kind === 'tie') {
         box.innerHTML = '<strong>Unentschieden</strong><span>beide ' + formatPoints(win.a) + ' Punkte</span>';
       } else {
-        box.innerHTML = '<strong>' + esc(state.names[win.team]) + ' gewinnt</strong><span>'
+        box.innerHTML = '<strong>' + esc(teamLabel(win.team)) + ' gewinnt</strong><span>'
           + formatPoints(totals[0]) + ' zu ' + formatPoints(totals[1]) + ' · '
           + win.margin + ' ' + punkt(win.margin) + ' weniger</span>';
       }
@@ -257,7 +307,7 @@
       } else {
         var leader = totals[0] < totals[1] ? 0 : 1;
         var margin = Math.abs(totals[0] - totals[1]);
-        lead.textContent = state.names[leader] + ' führt mit ' + margin + ' ' + punkt(margin);
+        lead.textContent = teamLabel(leader) + ' führt mit ' + margin + ' ' + punkt(margin);
         lead.classList.remove('hintish');
       }
     }
@@ -276,7 +326,7 @@
     if (empty) cls.push('is-empty');
     if (active) cls.push('active');
     if (!empty && value < 0) cls.push('is-neg');
-    var label = 'Runde ' + (round + 1) + ', ' + state.names[team] + ', ';
+    var label = 'Runde ' + (round + 1) + ', ' + teamLabel(team) + ', ';
     if (isRun) label += empty ? 'noch keine Summe' : 'Summe ' + formatPoints(value);
     else label += empty ? 'keine Punkte' : formatPoints(value) + ' Punkte';
     return '<button type="button" class="' + cls.join(' ') + '" data-round="' + round + '" data-team="' + team
@@ -290,7 +340,7 @@
     var label = 'Zwischensumme · Runden ' + (start + 1) + '–' + end;
     var aText = a == null ? '–' : formatPoints(a);
     var bText = b == null ? '–' : formatPoints(b);
-    var aria = label + '. ' + state.names[0] + ' ' + aText + ', ' + state.names[1] + ' ' + bText + '.';
+    var aria = label + '. ' + teamLabel(0) + ' ' + aText + ', ' + teamLabel(1) + ' ' + bText + '.';
     return '<div class="sep" role="separator" aria-label="' + esc(aria) + '">'
       + '<div class="sep-label">' + label + '</div>'
       + '<div class="subline"><span></span>'
@@ -300,7 +350,7 @@
   }
 
   function renderSheet() {
-    var sig = JSON.stringify(state.scores) + '|' + state.round + '|' + state.team + '|' + state.names.join('\n');
+    var sig = JSON.stringify(state.scores) + '|' + state.round + '|' + state.team + '|' + state.players.map(function (pair) { return pair.join('\n'); }).join('\n');
     if (sig === sheetSig) return;
     sheetSig = sig;
     var html = '<div class="hh rn-h"><span class="sr">Runde</span>R</div>';
@@ -321,7 +371,8 @@
 
   function head(team) {
     var cls = team === 0 ? 'a' : 'b';
-    return '<div class="hh team ' + cls + '"><div class="tname">' + esc(state.names[team])
+    var label = teamLabel(team);
+    return '<div class="hh team ' + cls + '"><div class="tname" title="' + esc(label) + '">' + esc(label)
       + '</div><div class="hlabel">Pkt</div><div class="hlabel">Summe</div></div>';
   }
 
@@ -375,12 +426,12 @@
   function tenText() {
     var a = Score.sumFirstTen(state.scores, 0);
     var b = Score.sumFirstTen(state.scores, 1);
-    return 'Nach zehn Runden: ' + state.names[0] + ' ' + pointsPhrase(a) + ', ' + state.names[1] + ' ' + pointsPhrase(b) + '.';
+    return 'Nach zehn Runden: ' + teamLabel(0) + ' ' + pointsPhrase(a) + ', ' + teamLabel(1) + ' ' + pointsPhrase(b) + '.';
   }
 
   function teamSpoken(team) {
-    if (Score.countFilled(state.scores, team) === 0) return state.names[team] + ' noch keine Punkte';
-    return state.names[team] + ' ' + pointsPhrase(Score.total(state.scores, team));
+    if (Score.countFilled(state.scores, team) === 0) return teamLabel(team) + ' noch keine Punkte';
+    return teamLabel(team) + ' ' + pointsPhrase(Score.total(state.scores, team));
   }
 
   function standText() {
@@ -388,8 +439,8 @@
     if (counts[0] === 0 && counts[1] === 0) return 'Noch keine Punkte.';
     var win = Score.winner(state.scores);
     if (win) {
-      var end = 'Endstand: ' + state.names[0] + ' ' + pointsPhrase(win.a) + ', ' + state.names[1] + ' ' + pointsPhrase(win.b) + '. ';
-      return end + (win.kind === 'tie' ? 'Unentschieden.' : state.names[win.team] + ' gewinnt.');
+      var end = 'Endstand: ' + teamLabel(0) + ' ' + pointsPhrase(win.a) + ', ' + teamLabel(1) + ' ' + pointsPhrase(win.b) + '. ';
+      return end + (win.kind === 'tie' ? 'Unentschieden.' : teamLabel(win.team) + ' gewinnt.');
     }
     var prefix = Score.cleanPrefix(state.scores);
     if (prefix === 10) return tenText();
@@ -724,7 +775,7 @@
   }
 
   function confirmReset() {
-    var names = state.names.slice();
+    var players = state.players.map(function (pair) { return pair.slice(); });
     var theme = state.theme;
     stopListening(true);
     if (window.speechSynthesis) {
@@ -732,7 +783,7 @@
     }
     resumeAfterSpeak = false;
     state = defaultState();
-    state.names = names;
+    state.players = players;
     state.theme = theme;
     announcedTen = false;
     buffer = '';
@@ -759,30 +810,35 @@
   }
 
   function bindNames() {
-    ['name-a', 'name-b'].forEach(function (id, index) {
-      var input = $(id);
-      input.value = state.names[index];
-      input.addEventListener('input', function () {
-        state.names[index] = input.value.slice(0, 30);
-        save();
-        renderBoard();
-        sheetSig = '';
-        renderSheet();
-      });
-      input.addEventListener('blur', function () {
-        state.names[index] = cleanName(input.value, index === 0 ? 'Team A' : 'Team B');
-        input.value = state.names[index];
-        save();
-        sheetSig = '';
-        renderAll();
-      });
-      input.addEventListener('keydown', function (event) {
-        if (event.key === 'Enter') {
-          event.preventDefault();
-          input.blur();
-        }
-      });
-    });
+    for (var team = 0; team < 2; team++) {
+      for (var index = 0; index < 2; index++) {
+        (function (team, index) {
+          var input = playerInput(team, index);
+          input.value = state.players[team][index];
+          input.addEventListener('input', function () {
+            state.players[team][index] = input.value.slice(0, 30);
+            save();
+            renderBoard();
+            sheetSig = '';
+            renderSheet();
+            renderStatus();
+          });
+          input.addEventListener('blur', function () {
+            state.players[team][index] = cleanName(input.value, DEFAULT_PLAYERS[team][index]);
+            input.value = state.players[team][index];
+            save();
+            sheetSig = '';
+            renderAll();
+          });
+          input.addEventListener('keydown', function (event) {
+            if (event.key === 'Enter') {
+              event.preventDefault();
+              input.blur();
+            }
+          });
+        })(team, index);
+      }
+    }
   }
 
   function onKeydown(event) {

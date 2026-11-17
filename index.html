@@ -50,12 +50,24 @@
     </div>
     <div class="teams">
       <article class="team-card a" data-team-card="0">
-        <input id="name-a" class="name" maxlength="30" autocomplete="off" autocapitalize="off" spellcheck="false" aria-label="Name von Team A" value="Team A">
+        <div class="pair">
+          <input id="player-0-0" class="name" maxlength="30" autocomplete="off" autocapitalize="off" spellcheck="false" enterkeyhint="next" aria-label="Erster Spieler links" value="Spieler 1">
+          <div class="pair-row">
+            <span class="amp" aria-hidden="true">&</span>
+            <input id="player-0-1" class="name" maxlength="30" autocomplete="off" autocapitalize="off" spellcheck="false" enterkeyhint="next" aria-label="Zweiter Spieler links" value="Spieler 2">
+          </div>
+        </div>
         <p class="kicker">Summe</p>
         <p class="total" id="total-a">0</p>
       </article>
       <article class="team-card b" data-team-card="1">
-        <input id="name-b" class="name" maxlength="30" autocomplete="off" autocapitalize="off" spellcheck="false" aria-label="Name von Team B" value="Team B">
+        <div class="pair">
+          <input id="player-1-0" class="name" maxlength="30" autocomplete="off" autocapitalize="off" spellcheck="false" enterkeyhint="next" aria-label="Erster Spieler rechts" value="Spieler 3">
+          <div class="pair-row">
+            <span class="amp" aria-hidden="true">&</span>
+            <input id="player-1-1" class="name" maxlength="30" autocomplete="off" autocapitalize="off" spellcheck="false" enterkeyhint="done" aria-label="Zweiter Spieler rechts" value="Spieler 4">
+          </div>
+        </div>
         <p class="kicker">Summe</p>
         <p class="total" id="total-b">0</p>
       </article>
@@ -73,7 +85,7 @@
   <footer class="dock">
     <div class="dock-inner">
       <div class="status-row">
-        <p id="status" class="status" aria-live="polite">Runde 1 · Team A</p>
+        <p id="status" class="status" aria-live="polite">Runde 1 · Spieler 1 &amp; Spieler 2</p>
         <span id="progress" class="progress">0/11</span>
       </div>
       <p id="hint" class="hint"></p>
@@ -120,7 +132,7 @@
 
   <div id="dialog" class="dialog" role="dialog" aria-modal="true" aria-labelledby="dialog-title" hidden>
     <h2 id="dialog-title">Neues Spiel?</h2>
-    <p>Alle Punkte werden gelöscht. Die Teamnamen bleiben erhalten.</p>
+    <p>Alle Punkte werden gelöscht. Die Spielernamen bleiben erhalten.</p>
     <div class="dialog-actions">
       <button type="button" id="cancel-reset" class="btn ghost">Abbrechen</button>
       <button type="button" id="confirm-reset" class="btn danger">Löschen</button>
