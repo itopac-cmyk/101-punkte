@@ -19,3 +19,9 @@ Unter den Runden 4 und 8 steht die Zwischensumme dieser vier Runden. „Neues Sp
 Minuspunkte sind erlaubt. Ohne Mikrofon, oder wenn der Browser keine Spracheingabe hat, gibt es die Zifferntastatur. Die Spracheingabe in Chrome braucht eine Internetverbindung. Tastatur und gespeicherter Spielstand funktionieren danach auch offline. Über „Zum Home-Bildschirm“ lässt sich die Seite wie eine App öffnen.
 
 Die Schriftart ist Calibri, mit Carlito als Ersatz (SIL Open Font License, siehe `fonts/OFL.txt`).
+
+## Veröffentlichung
+
+Der Branch `main` enthält die Seite. Die Action „GitHub Pages“ veröffentlicht sie.
+
+Einmalig unter **Settings → Pages → Build and deployment** die Quelle **GitHub Actions** wählen und die Action „GitHub Pages“ neu starten. Danach ist die Seite unter https://itopac-cmyk.github.io/101-punkte/ erreichbar.
