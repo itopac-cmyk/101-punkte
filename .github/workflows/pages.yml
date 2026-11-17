@@ -25,6 +25,8 @@ jobs:
         uses: actions/checkout@v7
       - name: Setup Pages
         uses: actions/configure-pages@v6
+        with:
+          enablement: true
       - name: Collect site
         run: |
           mkdir -p _site
