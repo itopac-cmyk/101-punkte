@@ -521,11 +521,6 @@
     } catch (err) {}
   }
 
-  function isIOS() {
-    return /iPad|iPhone|iPod/.test(navigator.userAgent || '')
-      || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
-  }
-
   function isUndoPhrase(raw) {
     var s = String(raw).toLowerCase();
     s = s.replace(/ß/g, 'ss').replace(/ä/g, 'ae').replace(/ö/g, 'oe').replace(/ü/g, 'ue');
@@ -554,7 +549,8 @@
       return;
     }
     var gen = ++speakGen;
-    resumeAfterSpeak = !!resume && listening;
+    sessionWanted = false;
+    resumeAfterSpeak = false;
     if (listening) stopListening(true);
     window.clearInterval(speakKick);
     window.clearTimeout(speakTimer);
@@ -572,12 +568,7 @@
       finished = true;
       window.clearInterval(speakKick);
       window.clearTimeout(speakTimer);
-      if (allowResume && resumeAfterSpeak) {
-        resumeAfterSpeak = false;
-        startListening();
-      } else {
-        resumeAfterSpeak = false;
-      }
+      resumeAfterSpeak = false;
     }
     utterance.onend = function () { finish(true); };
     utterance.onerror = function () { finish(false); };
@@ -632,19 +623,15 @@
     recognition.lang = 'de-DE';
     recognition.interimResults = true;
     recognition.maxAlternatives = 5;
-    var ios = isIOS();
-    recognition.continuous = !ios;
+    recognition.continuous = false;
     var startedAt = Date.now();
-    var gotResult = false;
+    var consumed = false;
     recognition.onstart = function () {
       speechMode = 'ready';
       renderStatus();
     };
     recognition.onresult = function (event) {
-      if (gen !== listenGen) return;
-      gotResult = true;
-      silenceTries = 0;
-      quickEnds = 0;
+      if (consumed || gen !== listenGen) return;
       var interim = '';
       var lastFinal = null;
       for (var i = event.resultIndex; i < event.results.length; i++) {
@@ -652,11 +639,18 @@
         if (result.isFinal) lastFinal = result;
         else if (result[0]) interim += result[0].transcript;
       }
-      if (lastFinal) takeFinal(lastFinal);
-      else if (interim && listening && gen === listenGen) showPreview(interim);
+      if (!lastFinal) {
+        if (interim) showPreview(interim);
+        return;
+      }
+      consumed = true;
+      sessionWanted = false;
+      window.clearTimeout(interimTimer);
+      takeFinal(lastFinal);
+      stopListening(true);
     };
     recognition.onerror = function (event) {
-      if (gen !== listenGen) return;
+      if (consumed || gen !== listenGen) return;
       var code = event.error || '';
       if (code === 'aborted') return;
       if (code === 'not-allowed' || code === 'service-not-allowed') {
@@ -694,8 +688,8 @@
       }
     };
     recognition.onend = function () {
-      if (!sessionWanted || gen !== listenGen || rec !== recognition) return;
-      if (!gotResult && Date.now() - startedAt < 280) {
+      if (consumed || !sessionWanted || gen !== listenGen || rec !== recognition) return;
+      if (Date.now() - startedAt < 280) {
         quickEnds++;
         if (quickEnds >= 3) {
           sessionWanted = false;
@@ -706,15 +700,21 @@
           return;
         }
       }
+      if (silenceTries > 1) {
+        sessionWanted = false;
+        listening = false;
+        rec = null;
+        renderChrome();
+        return;
+      }
       window.setTimeout(function () {
-        if (sessionWanted && gen === listenGen) startListening(false);
-      }, ios ? 280 : 140);
+        if (!consumed && sessionWanted && gen === listenGen) startListening(false);
+      }, 200);
     };
     try {
       recognition.start();
     } catch (err) {
       try {
-        recognition.continuous = false;
         recognition.start();
       } catch (err2) {
         listening = false;
@@ -750,12 +750,6 @@
     var heard = GermanNumbers.parse(clean);
     preview = heard == null ? '„' + clean + '“' : '„' + clean + '“ → ' + formatPoints(heard);
     renderStatus();
-    window.clearTimeout(interimTimer);
-    if (heard == null) return;
-    interimTimer = window.setTimeout(function () {
-      if (!listening) return;
-      takeParsed(heard, clean);
-    }, 700);
   }
 
   function takeFinal(result) {
@@ -765,7 +759,7 @@
     var raw = (picked.text || '').trim();
     if (!raw) return;
     if (isUndoPhrase(raw)) {
-      ignoreUntil = Date.now() + 700;
+      ignoreUntil = Date.now() + 800;
       undo();
       return;
     }
@@ -773,16 +767,14 @@
       setFlash('Nicht verstanden: „' + raw.slice(0, 40) + '“. Noch einmal.', 'error');
       return;
     }
-    takeParsed(picked.value, raw);
+    takeParsed(picked.value);
   }
 
-  function takeParsed(value, raw) {
+  function takeParsed(value) {
     var now = Date.now();
-    if (now < ignoreUntil) return;
-    var key = String(value) + '@' + state.round + ':' + state.team;
-    if (key === lastCommit.key && now - lastCommit.at < 900) return;
-    lastCommit = { key: key, at: now };
-    ignoreUntil = now + 650;
+    if (now < ignoreUntil && lastCommit.value === value) return;
+    lastCommit = { value: value, at: now };
+    ignoreUntil = now + 800;
     preview = '';
     commitValue(value);
   }

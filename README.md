@@ -8,8 +8,8 @@ Mobiltauglicher Punktezettel für **101** (Okey): zwei Teams, elf Runden, Sprach
 
 1. Seite auf dem Handy öffnen (Chrome oder Safari).
 2. Die vier Spielernamen antippen und anpassen. Voreingestellt sind „Spieler 1“ bis „Spieler 4“. Ein Team heißt dann zum Beispiel „Çağla & Deniz“.
-3. Auf das Mikrofon tippen. Es bleibt an und hört eine Zahl nach der anderen, zum Beispiel „zweiundvierzig“, „vierzig zwei“ oder „minus 101“. Ein kurzer Ton bestätigt jede Zahl. Noch einmal tippen beendet das Zuhören.
-4. Die Zahl wird eingetragen. Danach ist die andere Mannschaft beziehungsweise die nächste Runde dran. „Zurück“ oder das Wort „zurück“ macht die letzte Eingabe rückgängig.
+3. Auf das Mikrofon tippen und genau eine Zahl sagen, zum Beispiel „100“, „zweiundvierzig“ oder „minus 101“. Ein kurzer Ton bestätigt sie, danach ist das Mikrofon wieder aus.
+4. Für die andere Mannschaft das Mikrofon erneut antippen und die nächste Zahl sagen. „Zurück“ oder das Wort „zurück“ macht die letzte Eingabe rückgängig.
 5. Ein Feld antippen, um es auszuwählen. Noch einmal tippen oder „Tastatur“ wählen, um die Zahl zu korrigieren.
 6. Nach Runde 10 liest die App den Stand vor. Der Lautsprecher liest den Stand jederzeit vor.
 7. Nach Runde 11 gewinnt die niedrigere Summe. Bei Gleichstand steht „Unentschieden“.

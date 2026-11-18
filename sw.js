@@ -1,4 +1,4 @@
-var CACHE = '101-punkte-v3';
+var CACHE = '101-punkte-v4';
 var ASSETS = [
   './',
   './index.html',
