@@ -16,6 +16,11 @@
   var rec = null;
   var quickEnds = 0;
   var lastCommit = { key: '', at: 0 };
+  var undoStack = [];
+  var ignoreUntil = 0;
+  var interimTimer = 0;
+  var silenceTries = 0;
+  var sessionWanted = false;
   var flash = '';
   var flashKind = '';
   var preview = '';
@@ -197,7 +202,7 @@
 
   function statusText() {
     if (flash) return flash;
-    if (preview) return '„' + preview + '“';
+    if (preview) return 'Höre ' + preview;
     if (buffer) return whereText() + ' · ' + buffer;
     if (listening) return 'Höre zu · ' + whereText();
     return whereText();
@@ -227,7 +232,7 @@
     }
     $('progress').textContent = done + '/11';
     var hint = $('hint');
-    if (speechMode === 'denied') hint.textContent = 'Mikrofon blockiert. Die Tastatur funktioniert weiter.';
+    if (speechMode === 'denied') hint.textContent = 'Mikrofon nicht erlaubt. Bitte freigeben oder die Tastatur nutzen.';
     else if (speechMode === 'unsupported') hint.textContent = 'Spracheingabe ist in diesem Browser nicht verfügbar.';
     else hint.textContent = '';
     renderChrome();
@@ -307,7 +312,7 @@
       } else {
         var leader = totals[0] < totals[1] ? 0 : 1;
         var margin = Math.abs(totals[0] - totals[1]);
-        lead.textContent = teamLabel(leader) + ' führt mit ' + margin + ' ' + punkt(margin);
+        lead.textContent = teamLabel(leader) + ' führt mit ' + margin + ' ' + (margin === 1 ? 'Punkt' : 'Punkten');
         lead.classList.remove('hintish');
       }
     }
@@ -334,19 +339,8 @@
       + (empty ? '–' : formatPoints(value)) + '</button>';
   }
 
-  function sepHtml(start, end) {
-    var a = Score.blockSum(state.scores, 0, start, end);
-    var b = Score.blockSum(state.scores, 1, start, end);
-    var label = 'Zwischensumme · Runden ' + (start + 1) + '–' + end;
-    var aText = a == null ? '–' : formatPoints(a);
-    var bText = b == null ? '–' : formatPoints(b);
-    var aria = label + '. ' + teamLabel(0) + ' ' + aText + ', ' + teamLabel(1) + ' ' + bText + '.';
-    return '<div class="sep" role="separator" aria-label="' + esc(aria) + '">'
-      + '<div class="sep-label">' + label + '</div>'
-      + '<div class="subline"><span></span>'
-      + '<span class="subn a' + (a != null && a < 0 ? ' is-neg' : '') + '">' + aText + '</span>'
-      + '<span class="subn b' + (b != null && b < 0 ? ' is-neg' : '') + '">' + bText + '</span>'
-      + '</div></div>';
+  function sepHtml(afterRound) {
+    return '<div class="teilstrich" role="separator" aria-label="Teilstrich nach Runde ' + afterRound + '"></div>';
   }
 
   function renderSheet() {
@@ -359,8 +353,8 @@
       html += '<button type="button" class="rn' + (state.round === r ? ' is-active' : '') + '" data-round="' + r
         + '" aria-label="Runde ' + (r + 1) + '">' + (r + 1) + '</button>';
       html += cellButton(r, 0, false) + cellButton(r, 0, true) + cellButton(r, 1, false) + cellButton(r, 1, true);
-      if (r === 3) html += sepHtml(0, 4);
-      if (r === 7) html += sepHtml(4, 8);
+      if (r === 3) html += sepHtml(4);
+      if (r === 7) html += sepHtml(8);
     }
     $('sheet').innerHTML = html;
     if (keyboardNav) {
@@ -463,18 +457,80 @@
     speak(tenText(), true);
   }
 
+  function rememberCell() {
+    undoStack.push({
+      round: state.round,
+      team: state.team,
+      prev: state.scores[state.round][state.team]
+    });
+    if (undoStack.length > 30) undoStack.shift();
+  }
+
   function commitValue(value) {
     if (!Number.isInteger(value)) return;
     if (value === 0) value = 0;
     buffer = '';
     preview = '';
+    window.clearTimeout(interimTimer);
+    rememberCell();
     state.scores[state.round][state.team] = value;
     if (navigator.vibrate) navigator.vibrate(12);
+    beep();
     advance();
     save();
-    setFlash(formatPoints(value) + ' gespeichert');
+    setFlash(formatPoints(value) + ' eingetragen');
     renderAll();
     maybeAnnounceTen(true);
+  }
+
+  function undo() {
+    var step = undoStack.pop();
+    if (!step) {
+      setFlash('Nichts zum Rückgängigmachen.', 'error');
+      return;
+    }
+    state.scores[step.round][step.team] = step.prev;
+    state.round = step.round;
+    state.team = step.team;
+    buffer = '';
+    preview = '';
+    save();
+    maybeAnnounceTen(false);
+    renderAll();
+    setFlash('Rückgängig');
+  }
+
+  function beep() {
+    try {
+      var Ctx = window.AudioContext || window.webkitAudioContext;
+      if (!Ctx) return;
+      if (!beep.ctx) beep.ctx = new Ctx();
+      var ctx = beep.ctx;
+      if (ctx.state === 'suspended') ctx.resume();
+      var osc = ctx.createOscillator();
+      var gain = ctx.createGain();
+      osc.type = 'sine';
+      osc.frequency.value = 880;
+      gain.gain.setValueAtTime(0.0001, ctx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.07, ctx.currentTime + 0.015);
+      gain.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + 0.12);
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.start();
+      osc.stop(ctx.currentTime + 0.13);
+    } catch (err) {}
+  }
+
+  function isIOS() {
+    return /iPad|iPhone|iPod/.test(navigator.userAgent || '')
+      || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+  }
+
+  function isUndoPhrase(raw) {
+    var s = String(raw).toLowerCase();
+    s = s.replace(/ß/g, 'ss').replace(/ä/g, 'ae').replace(/ö/g, 'oe').replace(/ü/g, 'ue');
+    s = s.replace(/[^a-z\s]/g, ' ').replace(/\s+/g, ' ').trim();
+    return /^(zurueck|rueckgaengig|falsch|undo)$/.test(s);
   }
 
   function germanVoice() {
@@ -544,6 +600,7 @@
     listening = false;
     listenGen++;
     preview = '';
+    window.clearTimeout(interimTimer);
     var old = rec;
     rec = null;
     if (old) {
@@ -556,12 +613,18 @@
     else renderChrome();
   }
 
-  function startListening() {
+  function startListening(fromUser) {
     if (!speechSupported || speechMode === 'denied') {
+      sessionWanted = false;
       openKeypad();
       return;
     }
     stopListening(true);
+    if (fromUser) {
+      silenceTries = 0;
+      quickEnds = 0;
+    }
+    sessionWanted = true;
     listening = true;
     var gen = ++listenGen;
     var recognition = new SR();
@@ -569,49 +632,73 @@
     recognition.lang = 'de-DE';
     recognition.interimResults = true;
     recognition.maxAlternatives = 5;
-    recognition.continuous = true;
+    var ios = isIOS();
+    recognition.continuous = !ios;
     var startedAt = Date.now();
+    var gotResult = false;
     recognition.onstart = function () {
       speechMode = 'ready';
       renderStatus();
     };
     recognition.onresult = function (event) {
       if (gen !== listenGen) return;
+      gotResult = true;
+      silenceTries = 0;
+      quickEnds = 0;
       var interim = '';
+      var lastFinal = null;
       for (var i = event.resultIndex; i < event.results.length; i++) {
         var result = event.results[i];
-        if (result.isFinal) takeFinal(result);
+        if (result.isFinal) lastFinal = result;
         else if (result[0]) interim += result[0].transcript;
       }
-      if (interim && listening && gen === listenGen) {
-        preview = interim.trim().slice(0, 48);
-        renderStatus();
-      }
+      if (lastFinal) takeFinal(lastFinal);
+      else if (interim && listening && gen === listenGen) showPreview(interim);
     };
     recognition.onerror = function (event) {
       if (gen !== listenGen) return;
-      var code = event.error;
-      if (code === 'aborted' || code === 'no-speech') return;
+      var code = event.error || '';
+      if (code === 'aborted') return;
       if (code === 'not-allowed' || code === 'service-not-allowed') {
+        sessionWanted = false;
         speechMode = 'denied';
         listening = false;
         listenGen++;
-        setFlash('Mikrofon blockiert. Nutze die Tastatur.', 'error');
+        setFlash('Mikrofon nicht erlaubt. Bitte freigeben oder die Tastatur nutzen.', 'error');
         openKeypad();
         return;
       }
+      if (code === 'audio-capture') {
+        sessionWanted = false;
+        listening = false;
+        listenGen++;
+        setFlash('Kein Mikrofon gefunden. Nutze die Tastatur.', 'error');
+        renderChrome();
+        return;
+      }
       if (code === 'network') {
+        sessionWanted = false;
         listening = false;
         listenGen++;
         setFlash('Spracheingabe braucht eine Internetverbindung.', 'error');
         renderChrome();
+        return;
+      }
+      if (code === 'no-speech' || code === 'no-match') {
+        silenceTries++;
+        if (silenceTries <= 1) return;
+        sessionWanted = false;
+        listening = false;
+        setFlash(code === 'no-match' ? 'Nicht verstanden. Noch einmal sagen.' : 'Nichts gehört. Noch einmal sagen.', 'error');
+        renderChrome();
       }
     };
     recognition.onend = function () {
-      if (!listening || gen !== listenGen || rec !== recognition) return;
-      if (Date.now() - startedAt < 280) {
+      if (!sessionWanted || gen !== listenGen || rec !== recognition) return;
+      if (!gotResult && Date.now() - startedAt < 280) {
         quickEnds++;
-        if (quickEnds >= 4) {
+        if (quickEnds >= 3) {
+          sessionWanted = false;
           listening = false;
           rec = null;
           setFlash('Mikrofon konnte nicht starten. Nutze die Tastatur.', 'error');
@@ -620,8 +707,8 @@
         }
       }
       window.setTimeout(function () {
-        if (listening && gen === listenGen) startListening();
-      }, 160);
+        if (sessionWanted && gen === listenGen) startListening(false);
+      }, ios ? 280 : 140);
     };
     try {
       recognition.start();
@@ -630,10 +717,17 @@
         recognition.continuous = false;
         recognition.start();
       } catch (err2) {
-        speechMode = 'unsupported';
         listening = false;
         rec = null;
-        openKeypad();
+        sessionWanted = false;
+        if (fromUser) {
+          speechMode = 'unsupported';
+          setFlash('Spracheingabe nicht verfügbar. Nutze die Tastatur.', 'error');
+          openKeypad();
+        } else {
+          setFlash('Tippe das Mikrofon für die nächste Zahl.', 'error');
+          renderChrome();
+        }
         return;
       }
     }
@@ -650,22 +744,51 @@
     return { text: fallback, value: null };
   }
 
+  function showPreview(text) {
+    var clean = text.trim().slice(0, 60);
+    if (!clean) return;
+    var heard = GermanNumbers.parse(clean);
+    preview = heard == null ? '„' + clean + '“' : '„' + clean + '“ → ' + formatPoints(heard);
+    renderStatus();
+    window.clearTimeout(interimTimer);
+    if (heard == null) return;
+    interimTimer = window.setTimeout(function () {
+      if (!listening) return;
+      takeParsed(heard, clean);
+    }, 700);
+  }
+
   function takeFinal(result) {
     var picked = bestAlternative(result);
+    window.clearTimeout(interimTimer);
     preview = '';
-    if (!picked.text || !picked.text.trim()) return;
-    if (picked.value == null) {
-      setFlash('Nicht verstanden: „' + picked.text.trim().slice(0, 40) + '“', 'error');
+    var raw = (picked.text || '').trim();
+    if (!raw) return;
+    if (isUndoPhrase(raw)) {
+      ignoreUntil = Date.now() + 700;
+      undo();
       return;
     }
-    var key = picked.text.trim() + '@' + state.round + ':' + state.team;
+    if (picked.value == null) {
+      setFlash('Nicht verstanden: „' + raw.slice(0, 40) + '“. Noch einmal.', 'error');
+      return;
+    }
+    takeParsed(picked.value, raw);
+  }
+
+  function takeParsed(value, raw) {
     var now = Date.now();
-    if (key === lastCommit.key && now - lastCommit.at < 800) return;
+    if (now < ignoreUntil) return;
+    var key = String(value) + '@' + state.round + ':' + state.team;
+    if (key === lastCommit.key && now - lastCommit.at < 900) return;
     lastCommit = { key: key, at: now };
-    commitValue(picked.value);
+    ignoreUntil = now + 650;
+    preview = '';
+    commitValue(value);
   }
 
   function openKeypad() {
+    sessionWanted = false;
     if (listening) stopListening(true);
     keypadOpen = true;
     var value = state.scores[state.round][state.team];
@@ -749,6 +872,7 @@
   }
 
   function clearCell() {
+    rememberCell();
     state.scores[state.round][state.team] = null;
     save();
     maybeAnnounceTen(false);
@@ -758,6 +882,7 @@
   }
 
   function openDialog() {
+    sessionWanted = false;
     if (listening) stopListening(true);
     if (keypadOpen) closeKeypad();
     dialogOpen = true;
@@ -775,6 +900,7 @@
   }
 
   function confirmReset() {
+    sessionWanted = false;
     var players = state.players.map(function (pair) { return pair.slice(); });
     var theme = state.theme;
     stopListening(true);
@@ -786,6 +912,7 @@
     state.players = players;
     state.theme = theme;
     announcedTen = false;
+    undoStack = [];
     buffer = '';
     entry = '';
     preview = '';
@@ -900,10 +1027,11 @@
       openKeypad();
       return;
     }
-    if (listening) stopListening();
-    else {
-      quickEnds = 0;
-      startListening();
+    if (listening || sessionWanted) {
+      sessionWanted = false;
+      stopListening();
+    } else {
+      startListening(true);
     }
   });
 
@@ -919,6 +1047,7 @@
     syncHeights();
   });
 
+  $('undo').addEventListener('click', undo);
   $('keypad-open').addEventListener('click', openKeypad);
   $('new-game').addEventListener('click', openDialog);
   $('cancel-reset').addEventListener('click', closeDialog);

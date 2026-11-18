@@ -100,7 +100,20 @@ const cases = [
   ['eine million', null],
   ['1,5', null],
   ['1000000', null],
-  ['15 15', null]
+  ['15 15', null],
+  ['vierzig zwei', 42],
+  ['vierzig und zwei', 42],
+  ['vierzigzwei', 42],
+  ['zwei vierzig', 42],
+  ['zweivierzig', 42],
+  ['Minus 42', -42],
+  ['minus zweiundvierzig punkte', -42],
+  ['vier zwei', 42],
+  ['eins null eins', 101],
+  ['äh zweiundvierzig bitte', 42],
+  ['hundert vierzig zwei', 142],
+  ['ok minus hundertfünf', -105],
+  ['ja 30', 30]
 ];
 
 let failed = 0;

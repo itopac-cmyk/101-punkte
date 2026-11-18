@@ -178,7 +178,7 @@
     }
     if (/\d\.\d/.test(s)) return 'komma';
     s = s.replace(/\./g, ' ');
-    s = s.replace(/\b(punkte?|strafpunkte?|bonuspunkte?|bitte|danke|genau|also|aeh|aehm)\b/g, ' ');
+    s = s.replace(/\b(punkte?|strafpunkte?|bonuspunkte?|bitte|danke|genau|also|aeh|aehm|hmm+|hm|ja|okay|ok|halt|mal|naja|eigentlich|dann|fuer|team)\b/g, ' ');
     s = s.replace(/funf/g, 'fuenf');
     s = s.replace(/dreisig/g, 'dreissig');
     s = s.replace(/zwoelf/g, 'zwolf');
@@ -217,6 +217,55 @@
       last = place;
     }
     return total;
+  }
+
+  function repairGerman(glued) {
+    var tens = 'zwanzig|dreissig|vierzig|fuenfzig|sechzig|siebzig|achtzig|neunzig';
+    var ones = 'eins|eine|ein|zwei|zwo|drei|vier|fuenf|sechs|sieben|acht|neun';
+    var tensThenOne = new RegExp('(' + tens + ')(?:und)?(' + ones + ')(?!zig|zehn|und)', 'g');
+    var oneThenTens = new RegExp('(' + ones + ')(?!und)(' + tens + ')', 'g');
+    var s = glued.replace(tensThenOne, function (_, ten, one) {
+      var o = (one === 'eins' || one === 'eine') ? 'ein' : one;
+      return o + 'und' + ten;
+    });
+    return s.replace(oneThenTens, '$1und$2');
+  }
+
+  function isSingleDigit(n) {
+    return n >= 0 && n <= 9;
+  }
+
+  function isExactTen(n) {
+    return n >= 20 && n < 100 && n % 10 === 0;
+  }
+
+  function parseLoose(s) {
+    var tokens = s.split(/\s+/).filter(function (t) { return t && t !== 'und'; });
+    if (!tokens.length) return null;
+    var nums = [];
+    for (var i = 0; i < tokens.length; i++) {
+      var token = tokens[i];
+      var n = /^\d+$/.test(token) ? Number(token) : parseGlued(repairGerman(token));
+      if (n == null) n = parseGlued(token);
+      if (n == null) return null;
+      nums.push(n);
+    }
+    if (nums.length > 1 && nums.every(isSingleDigit)) {
+      return Number(nums.join(''));
+    }
+    var merged = [];
+    for (var j = 0; j < nums.length; j++) {
+      var a = nums[j];
+      var b = nums[j + 1];
+      if (b != null && ((isExactTen(a) && isSingleDigit(b) && b > 0) || (isSingleDigit(a) && a > 0 && isExactTen(b)))) {
+        merged.push(a + b);
+        j++;
+      } else {
+        merged.push(a);
+      }
+    }
+    if (merged.length === 1) return merged[0];
+    return parsePureDigits(merged.join(' '));
   }
 
   function parseGermanNumber(input) {
@@ -260,6 +309,8 @@
       var glued = spelled.replace(/\s+/g, '');
       if (/\d/.test(glued)) return null;
       value = parseGlued(glued);
+      if (value == null) value = parseGlued(repairGerman(glued));
+      if (value == null) value = parseLoose(s);
     }
 
     if (value == null || !Number.isFinite(value)) return null;
